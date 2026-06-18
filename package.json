@@ -21,7 +21,8 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*",
+      "electron/main.cjs",
+      "electron/preload.cjs",
       "package.json"
     ],
     "win": {
