@@ -1,9 +1,0 @@
-﻿export { PageDashboard } from "./Dashboard";
-export { PageDocuments } from "./Documents";
-export { PageScanner } from "./Scanner";
-export { PageJourney } from "./Journey";
-export { PageRegister } from "./Register";
-export { PageUsers } from "./Users";
-export { PageReports } from "./Reports";
-export { PageNotifications } from "./Notifications";
-export { PageSettings } from "./Settings";

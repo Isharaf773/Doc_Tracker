@@ -1,0 +1,136 @@
+/* Modern login page styles for DocTrack */
+.login-root {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at top left, rgba(20, 40, 50, 0.95), transparent 35%), linear-gradient(180deg, #11202c 0%, #1d3c54 50%, #7f6937 100%);
+}
+
+.login-shell {
+  width: 100%;
+  max-width: 940px;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 45px 140px rgba(0,0,0,0.35);
+  background: rgba(255,255,255,0.96);
+}
+
+.login-grid {
+  display: grid;
+  grid-template-columns: 0.98fr 1.02fr;
+  min-height: 540px;
+}
+
+.brand-left {
+  display:flex;flex-direction:column;justify-content:space-between;padding:42px;background:linear-gradient(180deg,#1f3a51 0%,#1d3c54 35%,#0f1b24 100%);color:white;
+}
+
+.home-slide-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 540px;
+  padding: 42px;
+  color: white;
+  overflow: hidden;
+  background: #07111d;
+}
+
+.home-slide-stage,
+.home-slide-overlay,
+.home-slide-image {
+  position: absolute;
+  inset: 0;
+}
+
+.home-slide-stage {
+  background: linear-gradient(135deg, #101820 0%, #20333d 100%);
+}
+
+.home-slide-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transform: scale(1.04);
+  transition: opacity 900ms ease, transform 5500ms ease;
+}
+
+.home-slide-image.is-active {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.home-slide-overlay {
+  background:
+    linear-gradient(90deg, rgba(3, 7, 18, 0.76) 0%, rgba(3, 7, 18, 0.48) 48%, rgba(3, 7, 18, 0.38) 100%),
+    linear-gradient(180deg, rgba(3, 7, 18, 0.2) 0%, rgba(3, 7, 18, 0.72) 100%);
+  z-index: 0;
+}
+
+.home-slide-dots {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.home-slide-dots button {
+  width: 28px;
+  height: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.34);
+  cursor: pointer;
+  padding: 0;
+}
+
+.home-slide-dots button.is-active {
+  background: #d1c58e;
+}
+
+.login-panel {
+  padding:42px;background:#f5f1eb;display:flex;flex-direction:column;justify-content:center;gap:22px;
+}
+
+.login-card {
+  display:grid;gap:16px;padding:22px;border-radius:18px;background:white;box-shadow:0 16px 34px rgba(15,23,42,0.08);
+}
+
+.brand-logo{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.brand-logo .mark{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#d1c58e,#b18f4a);box-shadow:0 8px 18px rgba(17,24,39,0.08)}
+.brand-logo .title{font-size:18px;font-weight:800;color:#1f2937}
+
+.hero-sub{font-size:13px;color:#6b7280;margin-bottom:6px}
+
+.btn-fancy{background:linear-gradient(90deg,#2b7a78 0%, #5a8a5f 50%, #8abf6b 100%);color:white;border:none;padding:14px 18px;border-radius:12px;font-weight:800;box-shadow:0 8px 28px rgba(35,99,77,0.12);cursor:pointer;transition:transform .12s, box-shadow .12s}
+.btn-fancy:active{transform:translateY(1px)}
+
+.left-features .feature{display:flex;gap:12px;align-items:flex-start}
+.left-features .icon{width:38px;height:38;border-radius:10px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center}
+
+
+.login-input {
+  width:100%;border-radius:12px;border:1px solid rgba(108,122,137,0.18);padding:14px 16px;font-size:14px;background:#fbfbfb;box-sizing:border-box;color:#000;outline:none;font-family:inherit;transition:box-shadow .18s, border-color .12s;
+}
+.login-input:focus{box-shadow:0 8px 24px rgba(20,40,60,0.06);border-color:rgba(108,122,137,0.32)}
+
+.password-wrapper{position:relative;display:flex;align-items:center}
+.pw-toggle{position:absolute;right:12px;border:none;background:transparent;cursor:pointer;color:#6b7280;font-size:13px}
+
+.info-pill{font-size:13px;padding:8px 10px;border-radius:10px}
+.error-pill{background:#fee2e2;color:#b91c1c}
+.success-pill{background:#d1fae5;color:#064e3b}
+
+.reset-link-row{display:flex;gap:8px;align-items:center}
+.copy-btn{border:none;background:transparent;color:#065f46;cursor:pointer;font-weight:700}
+
+@media (max-width: 860px){
+  .login-grid{grid-template-columns:1fr;min-height:unset}
+  .brand-left{padding:28px}
+  .home-slide-box{min-height:430px;padding:28px}
+  .login-panel{padding:28px}
+}
