@@ -1193,13 +1193,17 @@ async function ensureUserCategoryColumn() {
 }
 
 
-  await ensureAdminDepartmentColumn();
-  await ensureUserCategoryColumn();
-  if (process.env.VERCEL !== "1") {
-  app.listen(port, () => {
-    console.log(`DocTrack backend running on http://127.0.0.1:${port}`);
+ ensureAdminDepartmentColumn()
+  .then(() => ensureUserCategoryColumn())
+  .then(() => {
+    if (process.env.VERCEL !== "1") {
+      app.listen(port, () => {
+        console.log(`DocTrack backend running on http://127.0.0.1:${port}`);
+      });
+    }
+  })
+  .catch((err) => {
+    console.error(err);
   });
-}
 
 export default app;
-
