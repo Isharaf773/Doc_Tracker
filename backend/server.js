@@ -1195,7 +1195,11 @@ async function ensureUserCategoryColumn() {
 (async () => {
   await ensureAdminDepartmentColumn();
   await ensureUserCategoryColumn();
+  if (process.env.VERCEL !== "1") {
   app.listen(port, () => {
     console.log(`DocTrack backend running on http://127.0.0.1:${port}`);
   });
+}
+
+export default app;
 })();
