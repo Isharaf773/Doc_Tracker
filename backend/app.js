@@ -17,24 +17,44 @@ const allowedOrigins = [
   "http://127.0.0.1:5173",
   "http://localhost:5174",
 
-  "https://doc-tracker-iota.vercel.app",   // <-- මේක add කරන්න
-
+  "https://doc-tracker-iota.vercel.app",   
   "file://",
   "vscode-webview://",
 ];
 
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || origin === "null" || origin === "file://") {
-      // Allow requests from Electron file:// pages, null-origin fetches, and native apps
-      return callback(null, true);
-    }
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error(`CORS policy does not allow access from origin ${origin}`));
-  },
-}));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (Postman, Electron, etc.)
+      if (!origin || origin === "null" || origin === "file://") {
+        return callback(null, true);
+      }
+
+      // Allow localhost
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow ALL Vercel deployments
+      if (origin.endsWith(".vercel.app")) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS policy does not allow access from origin ${origin}`));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-admin-email",
+      "x-admin-token"
+    ],
+  })
+);
+
+app.options("*", cors());
+
 app.use(express.json());
 
 const emailUser = process.env.GMAIL_USER || process.env.EMAIL_USER;
