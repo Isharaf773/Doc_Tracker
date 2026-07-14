@@ -1192,7 +1192,7 @@ async function ensureUserCategoryColumn() {
   }
 }
 
-(async () => {
+
   await ensureAdminDepartmentColumn();
   await ensureUserCategoryColumn();
   if (process.env.VERCEL !== "1") {
@@ -1202,4 +1202,4 @@ async function ensureUserCategoryColumn() {
 }
 
 export default app;
-})();
+
