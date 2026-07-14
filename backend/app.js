@@ -25,22 +25,27 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (Postman, Electron, etc.)
+      // Allow requests without an Origin header, including Electron/native clients.
       if (!origin || origin === "null" || origin === "file://") {
         return callback(null, true);
       }
 
-      // Allow localhost
+      // Allow explicitly trusted local and production origins.
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      // Allow ALL Vercel deployments
-      if (origin.endsWith(".vercel.app")) {
+      // Allow this project's Vercel preview deployments.
+      const isDocTrackerVercelPreview =
+        /^https:\/\/doc-tracker-[a-z0-9-]+-isharaf773\.vercel\.app$/i.test(origin);
+
+      if (isDocTrackerVercelPreview) {
         return callback(null, true);
       }
 
-      return callback(new Error(`CORS policy does not allow access from origin ${origin}`));
+      return callback(
+        new Error(`CORS policy does not allow access from origin ${origin}`)
+      );
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -49,12 +54,11 @@ app.use(
       "Authorization",
       "x-admin-email",
       "x-admin-token"
-    ],
+    ]
   })
 );
 
 app.options("*", cors());
-
 app.use(express.json());
 
 const emailUser = process.env.GMAIL_USER || process.env.EMAIL_USER;
