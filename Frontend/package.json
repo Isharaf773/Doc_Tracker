@@ -1,7 +1,7 @@
 {
   "name": "doctrack-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -11,10 +11,11 @@
     "preview": "vite preview",
     "electron:start": "cross-env ELECTRON_START_URL=http://localhost:5173 wait-on http://localhost:5173 && electron .",
     "electron:dev": "concurrently \"npm run dev\" \"npm run electron:start\"",
-    "electron:build": "npm run build && electron-builder --win portable --x64"
+    "electron:build": "electron-builder --win portable nsis --x64",
+    "electron:portable": "electron-builder --win portable --x64",
+    "electron:setup": "electron-builder --win nsis --x64"
   },
   "dependencies": {
-    "electron": "^26.2.0",
     "jspdf": "^4.2.1",
     "jsqr": "^1.4.0",
     "react": "^19.2.6",
@@ -28,6 +29,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^8.2.0",
     "cross-env": "^7.0.3",
+    "electron": "^26.2.0",
     "electron-builder": "^24.7.0",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -39,18 +41,41 @@
     "appId": "com.geomine.doctrack",
     "productName": "DocTrack",
     "directories": {
-      "output": "electron-dist"
+      "output": "electron-dist",
+      "buildResources": "build"
     },
     "files": [
-      "dist/**/*",
       "electron/**/*",
+      "build/**/*",
       "package.json"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
-        "portable",
-        "nsis"
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
+    },
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "asar": true,
+    "compression": "maximum",
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DocTrack",
+      "deleteAppDataOnUninstall": false
     }
   }
 }

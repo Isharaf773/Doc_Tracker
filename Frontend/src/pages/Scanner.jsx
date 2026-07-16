@@ -215,7 +215,7 @@ export function PageScanner() {
   const loadRecord = async (lookupCode) => {
     const code = String(lookupCode || recordCode).trim();
     if (!code) {
-      setError("Please enter or scan a record code first.");
+      setError("Please enter or scan a record code or document name first.");
       return;
     }
     setLoading(true);
@@ -321,11 +321,11 @@ export function PageScanner() {
             </FormGroup>
 
             {lookupMode === "code" && (
-              <FormGroup label="Record ID">
+              <FormGroup label="Lookup term">
                 <Input
                   value={recordCode}
                   onChange={e => setRecordCode(e.target.value)}
-                  placeholder="Enter full code or unique trailing digits"
+                  placeholder="Enter full code, unique trailing digits, or document name"
                   mono
                 />
               </FormGroup>

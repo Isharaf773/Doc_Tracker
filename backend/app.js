@@ -59,7 +59,7 @@ app.use(
 );
 
 app.options("*", cors());
-app.use(express.json());
+app.use(express.json({ limit: "6mb" }));
 
 const emailUser = process.env.GMAIL_USER || process.env.EMAIL_USER;
 const emailPass = process.env.GMAIL_PASS || process.env.EMAIL_PASS;
@@ -80,6 +80,29 @@ const transporter = emailUser && emailPass
 
 function sendError(res, message, status = 500) {
   return res.status(status).json({ error: message });
+}
+
+
+let softCopySchemaPromise;
+async function ensureSoftCopySchema() {
+  if (!softCopySchemaPromise) {
+    softCopySchemaPromise = (async () => {
+      const statements = [
+        "ALTER TABLE records ADD COLUMN IF NOT EXISTS soft_copy LONGBLOB NULL",
+        "ALTER TABLE records ADD COLUMN IF NOT EXISTS soft_copy_name VARCHAR(255) NULL",
+        "ALTER TABLE records ADD COLUMN IF NOT EXISTS soft_copy_type VARCHAR(120) NULL",
+        "ALTER TABLE records ADD COLUMN IF NOT EXISTS soft_copy_size INT NULL",
+        "ALTER TABLE records ADD COLUMN IF NOT EXISTS sender_name VARCHAR(255) NULL",
+        "ALTER TABLE records ADD COLUMN IF NOT EXISTS sender_department VARCHAR(120) NULL",
+        "ALTER TABLE records ADD COLUMN IF NOT EXISTS handler_department VARCHAR(120) NULL",
+      ];
+      for (const sql of statements) await query(sql);
+    })().catch((error) => {
+      softCopySchemaPromise = null;
+      throw error;
+    });
+  }
+  return softCopySchemaPromise;
 }
 
 async function addNotification(type, message) {
@@ -449,7 +472,7 @@ app.get("/api/dashboard", async (req, res) => {
 });
 
 app.get("/api/records", async (req, res) => {
-  let { status, statusGroup, dept, startDate, endDate, overdue, delayed } = req.query;
+  let { status, statusGroup, dept, startDate, endDate, overdue, delayed, search } = req.query;
   const conditions = [];
   const params = [];
 
@@ -492,19 +515,50 @@ app.get("/api/records", async (req, res) => {
     conditions.push("DATE(updated_at) <= ?");
     params.push(endDate);
   }
+  if (search && String(search).trim()) {
+    const term = `%${String(search).trim()}%`;
+    conditions.push("(record_code LIKE ? OR name LIKE ? OR dept LIKE ? OR handler LIKE ? OR sender_name LIKE ? OR sender_email LIKE ? OR sender_department LIKE ? OR handler_department LIKE ?)");
+    params.push(term, term, term, term, term, term, term, term);
+  }
 
-  let sql = "SELECT record_code AS id, name, dept, status, handler, DATE_FORMAT(updated_at, '%l:%i %p') AS updated FROM records";
+  let sql = "SELECT record_code AS id, name, dept, status, handler, sender_name AS senderName, sender_email AS senderEmail, COALESCE(sender_department, 'Non Department') AS senderDepartment, COALESCE(handler_department, dept) AS handlerDepartment, (soft_copy IS NOT NULL) AS hasSoftCopy, soft_copy_name AS softCopyName, DATE_FORMAT(updated_at, '%l:%i %p') AS updated FROM records";
   if (conditions.length) {
     sql += ` WHERE ${conditions.join(" AND ")}`;
   }
   sql += " ORDER BY updated_at DESC LIMIT 100";
 
   try {
+    await ensureSoftCopySchema();
     const records = await query(sql, params);
     return res.json({ records });
   } catch (error) {
     console.error(error);
     return sendError(res, "Unable to load records.");
+  }
+});
+
+app.get("/api/records/:recordCode/soft-copy", requireAdmin, async (req, res) => {
+  const recordCode = String(req.params.recordCode || "").trim();
+  if (!recordCode) return sendError(res, "Record code is required.", 400);
+
+  try {
+    await ensureSoftCopySchema();
+    const [file] = await query(
+      "SELECT soft_copy, soft_copy_name, soft_copy_type, soft_copy_size FROM records WHERE record_code = ? LIMIT 1",
+      [recordCode]
+    );
+    if (!file) return sendError(res, "Record not found.", 404);
+    if (!file.soft_copy) return sendError(res, "No soft copy is attached to this document.", 404);
+
+    const safeName = String(file.soft_copy_name || `${recordCode}.pdf`).replace(/[\r\n"]/g, "_");
+    res.setHeader("Content-Type", file.soft_copy_type || "application/octet-stream");
+    res.setHeader("Content-Length", String(file.soft_copy_size || file.soft_copy.length));
+    res.setHeader("Content-Disposition", `inline; filename="${safeName}"`);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    return res.send(file.soft_copy);
+  } catch (error) {
+    console.error(error);
+    return sendError(res, "Unable to load the soft copy.");
   }
 });
 
@@ -517,7 +571,7 @@ app.get("/api/records/:recordCode", async (req, res) => {
 
   try {
     const [record] = await query(
-      "SELECT record_code AS id, name, dept, status, handler, location, priority, sender_email, DATE_FORMAT(created_at, '%Y-%m-%d %T') AS created_at, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code = ? LIMIT 1",
+      "SELECT record_code AS id, name, dept, status, handler, location, priority, sender_name, sender_email, COALESCE(sender_department, 'Non Department') AS sender_department, COALESCE(handler_department, dept) AS handler_department, DATE_FORMAT(created_at, '%Y-%m-%d %T') AS created_at, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code = ? LIMIT 1",
       [recordCodeParam]
     );
 
@@ -532,7 +586,7 @@ app.get("/api/records/:recordCode", async (req, res) => {
         const digits = suffixMatch[1];
         console.log('[records.lookup] attempting suffix match for digits:', digits);
         const suffixRecords = await query(
-          "SELECT record_code AS id, name, dept, status, handler, location, priority, sender_email, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE RIGHT(record_code, ?) = ? ORDER BY updated_at DESC LIMIT 2",
+          "SELECT record_code AS id, name, dept, status, handler, location, priority, sender_name, sender_email, COALESCE(sender_department, 'Non Department') AS sender_department, COALESCE(handler_department, dept) AS handler_department, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE RIGHT(record_code, ?) = ? ORDER BY updated_at DESC LIMIT 2",
           [digits.length, digits]
         );
         console.log('[records.lookup] suffixRecords.count =', suffixRecords.length, 'results:', suffixRecords.map(r=>r.id));
@@ -546,7 +600,7 @@ app.get("/api/records/:recordCode", async (req, res) => {
         // fallback to LIKE if RIGHT() finds nothing
         console.log('[records.lookup] RIGHT() found no unique match, trying LIKE fallback');
         const likeRecords = await query(
-          "SELECT record_code AS id, name, dept, status, handler, location, priority, sender_email, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code LIKE ? ORDER BY updated_at DESC LIMIT 2",
+          "SELECT record_code AS id, name, dept, status, handler, location, priority, sender_name, sender_email, COALESCE(sender_department, 'Non Department') AS sender_department, COALESCE(handler_department, dept) AS handler_department, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code LIKE ? ORDER BY updated_at DESC LIMIT 2",
           [`%${digits}`]
         );
         console.log('[records.lookup] likeRecords.count =', likeRecords.length, 'results:', likeRecords.map(r=>r.id));
@@ -570,11 +624,25 @@ app.get("/api/records/:recordCode", async (req, res) => {
 
     for (const pattern of patterns) {
       const rows = await query(
-        "SELECT record_code AS id, name, dept, status, handler, location, priority, sender_email, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code LIKE ? ORDER BY updated_at DESC LIMIT 2",
+        "SELECT record_code AS id, name, dept, status, handler, location, priority, sender_name, sender_email, COALESCE(sender_department, 'Non Department') AS sender_department, COALESCE(handler_department, dept) AS handler_department, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code LIKE ? ORDER BY updated_at DESC LIMIT 2",
         [pattern]
       );
       if (rows.length === 1) return res.json({ record: rows[0] });
       if (rows.length > 1) return sendError(res, "Multiple records found for this search. Please enter a more specific code.", 409);
+    }
+
+    // Try document name lookup when the exact code/number lookup did not find a unique record
+    if (recordCodeParam.length >= 3) {
+      const nameRows = await query(
+        "SELECT record_code AS id, name, dept, status, handler, location, priority, sender_name, sender_email, COALESCE(sender_department, 'Non Department') AS sender_department, COALESCE(handler_department, dept) AS handler_department, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE name LIKE ? ORDER BY updated_at DESC LIMIT 2",
+        [`%${recordCodeParam}%`]
+      );
+      if (nameRows.length === 1) {
+        return res.json({ record: nameRows[0] });
+      }
+      if (nameRows.length > 1) {
+        return sendError(res, "Multiple records found for this search. Please enter a more specific document name.", 409);
+      }
     }
 
     // Final aggressive fallback: try hyphen-stripped exact match and a broader LIKE
@@ -582,7 +650,7 @@ app.get("/api/records/:recordCode", async (req, res) => {
       const noHyphen = recordCodeParam.replace(/-/g, "");
       console.log('[records.lookup] final fallback: trying hyphen-stripped and broader LIKE', { noHyphen });
       const finalRows = await query(
-        "SELECT record_code AS id, name, dept, status, handler, location, priority, sender_email, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code LIKE ? OR REPLACE(record_code, '-', '') = ? ORDER BY updated_at DESC LIMIT 2",
+        "SELECT record_code AS id, name, dept, status, handler, location, priority, sender_name, sender_email, COALESCE(sender_department, 'Non Department') AS sender_department, COALESCE(handler_department, dept) AS handler_department, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code LIKE ? OR REPLACE(record_code, '-', '') = ? ORDER BY updated_at DESC LIMIT 2",
         [`%${recordCodeParam}%`, noHyphen]
       );
       console.log('[records.lookup] finalRows.count =', finalRows.length, 'results:', finalRows.map(r => r.id));
@@ -600,9 +668,9 @@ app.get("/api/records/:recordCode", async (req, res) => {
 });
 
 app.post("/api/records", async (req, res) => {
-  const { name, dept, senderEmail, dueDate, priority, location, status, handler, message } = req.body;
-  if (!name || !dept || !senderEmail) {
-    return sendError(res, "Name, department and sender email are required.", 400);
+  const { name, dept, senderName, senderDepartment, handlerDepartment, senderEmail, dueDate, priority, location, status, handler, message, attachmentName, attachmentType, attachmentSize, attachmentData } = req.body;
+  if (!name || !dept || !senderName || !senderEmail || !handler) {
+    return sendError(res, "Document name, sender name, sender email and handler are required.", 400);
   }
 
   const recordCode = `REC-2026-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -614,10 +682,24 @@ app.post("/api/records", async (req, res) => {
     const initialHandler = handler || "Admin";
     const initialLocation = location || dept;
 
+    await ensureSoftCopySchema();
+
+    let softCopyBuffer = null;
+    if (attachmentData) {
+      const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
+      if (!allowedTypes.has(attachmentType)) {
+        return sendError(res, "Soft copy must be a PDF, JPG or PNG file.", 400);
+      }
+      softCopyBuffer = Buffer.from(String(attachmentData), "base64");
+      if (softCopyBuffer.length > 3 * 1024 * 1024) {
+        return sendError(res, "Soft copy must be 3 MB or smaller.", 400);
+      }
+    }
+
     await query(
-      `INSERT INTO records (record_code, name, dept, status, handler, location, priority, sender_email, due_date, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [recordCode, name, dept, initialStatus, initialHandler, initialLocation, priority || "Routine", senderEmail, dueDate || null]
+      `INSERT INTO records (record_code, name, dept, status, handler, location, priority, sender_name, sender_email, sender_department, handler_department, due_date, soft_copy, soft_copy_name, soft_copy_type, soft_copy_size, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [recordCode, name, dept, initialStatus, initialHandler, initialLocation, priority || "Routine", senderName, senderEmail, senderDepartment || "Non Department", handlerDepartment || dept, dueDate || null, softCopyBuffer, attachmentName || null, attachmentType || null, softCopyBuffer ? softCopyBuffer.length : (attachmentSize || null)]
     );
 
     const nextStep = await query(
@@ -633,7 +715,7 @@ app.post("/api/records", async (req, res) => {
       [recordCode, stepOrder, `Registered — ${dept}`, initialMeta, true]
     );
 
-    const [record] = await query("SELECT record_code AS id, name, dept, status, handler, location, priority, sender_email, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code = ? LIMIT 1", [recordCode]);
+    const [record] = await query("SELECT record_code AS id, name, dept, status, handler, location, priority, sender_name, sender_email, COALESCE(sender_department, 'Non Department') AS sender_department, COALESCE(handler_department, dept) AS handler_department, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code = ? LIMIT 1", [recordCode]);
 
     await addNotification('record', `New document registered: ${recordCode} — ${record.name}`);
 
@@ -772,7 +854,7 @@ app.post("/api/records/:recordCode/location", async (req, res) => {
 
     await addNotification(notificationType, notificationMessage);
 
-    const [updated] = await query("SELECT record_code AS id, name, dept, status, handler, location, priority, sender_email, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code = ? LIMIT 1", [req.params.recordCode]);
+    const [updated] = await query("SELECT record_code AS id, name, dept, status, handler, location, priority, sender_name, sender_email, COALESCE(sender_department, 'Non Department') AS sender_department, COALESCE(handler_department, dept) AS handler_department, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code = ? LIMIT 1", [req.params.recordCode]);
     return res.json({ record: updated });
   } catch (error) {
     console.error(error);

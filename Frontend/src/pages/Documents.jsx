@@ -3,7 +3,7 @@ import { BtnGreen, BtnOutline, Input } from "../components/ui";
 import { Panel, PanelHeader, StatusBadge } from "./PageHelpers";
 import { BLUE } from "../theme";
 import { Select } from "../components/ui";
-import { fetchRecords } from "../api";
+import { fetchRecords, fetchRecordSoftCopy } from "../api";
 
 export function PageDocuments({ nav, pageSearch = "", routeParams = {} }) {
   const [records, setRecords] = useState([]);
@@ -35,13 +35,42 @@ export function PageDocuments({ nav, pageSearch = "", routeParams = {} }) {
     return suffixMatch ? suffixMatch[1].includes(query) : false;
   };
 
+  const [openingFileId, setOpeningFileId] = useState("");
+  const [fileError, setFileError] = useState("");
+
+  const handleViewSoftCopy = async (record) => {
+    setFileError("");
+    setOpeningFileId(record.id);
+    try {
+      const { blob } = await fetchRecordSoftCopy(record.id);
+      const url = URL.createObjectURL(blob);
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = record.softCopyName || `${record.id}-soft-copy`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      setFileError(error.message || "Unable to open the soft copy.");
+    } finally {
+      setOpeningFileId("");
+    }
+  };
+
   const handleExport = () => {
     const rows = docsToRender.map(doc => ({
       "Record ID": doc.id,
       "Name": doc.name,
-      "Department": doc.dept,
-      "Status": doc.status,
+      "Sender": doc.senderName || "",
+      "Sender Email": doc.senderEmail || "",
+      "Sender Department": doc.senderDepartment || "Non Department",
       "Handler": doc.handler,
+      "Handler Department": doc.handlerDepartment || doc.dept,
+      "Status": doc.status,
       "Updated": doc.updated,
     }));
 
@@ -51,7 +80,7 @@ export function PageDocuments({ nav, pageSearch = "", routeParams = {} }) {
     const title = `Records Export`;
     const exportDate = new Date().toISOString().slice(0, 10);
 
-    const headerCells = ["Record ID", "Name", "Department", "Status", "Handler", "Updated"]
+    const headerCells = ["Record ID", "Name", "Sender", "Sender Email", "Sender Department", "Handler", "Handler Department", "Status", "Updated"]
       .map(label => `<th style="padding:10px 12px; text-align:left; background:#5A4728; color:#ffffff; font-weight:600; font-size:11pt;">${label}</th>`)
       .join("");
 
@@ -67,13 +96,13 @@ export function PageDocuments({ nav, pageSearch = "", routeParams = {} }) {
         <body>
           <table style="width:100%; border-collapse:collapse; font-family:Arial, sans-serif; margin-bottom:16px;">
             <tr>
-              <td colspan="6" style="font-size:18pt; font-weight:700; color:#1f2937; padding:12px 0;">${escapeHtml(title)}</td>
+              <td colspan="9" style="font-size:18pt; font-weight:700; color:#1f2937; padding:12px 0;">${escapeHtml(title)}</td>
             </tr>
             <tr>
-              <td colspan="6" style="font-size:10pt; color:#475569; padding:4px 0;">Export date: ${escapeHtml(exportDate)}</td>
+              <td colspan="9" style="font-size:10pt; color:#475569; padding:4px 0;">Export date: ${escapeHtml(exportDate)}</td>
             </tr>
             <tr>
-              <td colspan="6" style="font-size:10pt; color:#475569; padding:4px 0;">${escapeHtml(filters)}</td>
+              <td colspan="9" style="font-size:10pt; color:#475569; padding:4px 0;">${escapeHtml(filters)}</td>
             </tr>
           </table>
           <table border="1" style="width:100%; border-collapse:collapse; font-family:Arial, sans-serif;">
@@ -108,6 +137,8 @@ export function PageDocuments({ nav, pageSearch = "", routeParams = {} }) {
       if (departmentFilter !== "All departments") filters.dept = departmentFilter;
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
+      const activeSearch = (localSearch || pageSearch).trim();
+      if (activeSearch) filters.search = activeSearch;
       if (showDelayed) {
         filters.delayed = true;
         if (routeParams.overdue === "true") {
@@ -126,7 +157,7 @@ export function PageDocuments({ nav, pageSearch = "", routeParams = {} }) {
     }
     loadRecords();
     return () => { isMounted = false; };
-  }, [statusFilter, statusGroup, departmentFilter, startDate, endDate, showDelayed]);
+  }, [statusFilter, statusGroup, departmentFilter, startDate, endDate, showDelayed, localSearch, pageSearch]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -159,7 +190,11 @@ export function PageDocuments({ nav, pageSearch = "", routeParams = {} }) {
     const matchesSearch = !search || (
       recordCodeMatches(doc.id, search) ||
       doc.name.toLowerCase().includes(search) ||
-      doc.dept.toLowerCase().includes(search) ||
+      (doc.senderName || "").toLowerCase().includes(search) ||
+      (doc.senderEmail || "").toLowerCase().includes(search) ||
+      (doc.senderDepartment || "").toLowerCase().includes(search) ||
+      (doc.handler || "").toLowerCase().includes(search) ||
+      (doc.handlerDepartment || doc.dept || "").toLowerCase().includes(search) ||
       doc.status.toLowerCase().includes(search)
     );
 
@@ -177,7 +212,7 @@ export function PageDocuments({ nav, pageSearch = "", routeParams = {} }) {
         <div style={{ display: "flex", alignItems: "center", gap: 7, background: "white", border: "0.5px solid rgba(0,0,0,0.12)", borderRadius: 8, padding: "6px 11px", width: 240 }}>
           <i className="ti ti-search" style={{ fontSize: 13, color: "#aaa" }} />
           <input
-            placeholder="Search by ID or name…"
+            placeholder="Search ID, name, sender or handler…"
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
             style={{ border: "none", background: "transparent", fontSize: 12, color: "#1a1a1a", outline: "none", width: "100%", fontFamily: "inherit" }}
@@ -234,12 +269,13 @@ export function PageDocuments({ nav, pageSearch = "", routeParams = {} }) {
           <BtnGreen onClick={() => nav("register")} small><i className="ti ti-plus" style={{ fontSize: 14 }} />New record</BtnGreen>
         </div>
       </div>
+      {fileError && <div style={{ marginBottom: 10, padding: "9px 12px", borderRadius: 9, background: "#fee2e2", color: "#991b1b", fontSize: 12 }}>{fileError}</div>}
       <Panel>
         <PanelHeader title="All records" badge={loading ? "Loading…" : `${docsToRender.length} total`} />
         <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
           <thead>
             <tr style={{ background: "#f8f8f7" }}>
-              {['Record ID','Name','Department','Status','Handler','Updated'].map((h,i) => (
+              {['Record ID','Name','Sender details','Sender dept.','Handler','Handler dept.','Status','Updated','Soft copy'].map((h,i) => (
                 <th key={h} style={{ fontSize: 10, fontWeight: 500, color: "#888", textAlign: "left", padding: "7px 14px", borderBottom: "0.5px solid rgba(0,0,0,0.08)", textTransform: "uppercase", letterSpacing: "0.05em", width: i===0 ? 110 : i===2 ? 100 : i===3 ? 90 : i===4 ? 80 : i===5 ? 80 : undefined }}>{h}</th>
               ))}
             </tr>
@@ -251,14 +287,26 @@ export function PageDocuments({ nav, pageSearch = "", routeParams = {} }) {
                 <td style={{ padding: "9px 14px", fontSize: 12, color: "#1a1a1a", borderBottom: "0.5px solid rgba(0,0,0,0.06)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}><i className="ti ti-file-text" style={{ fontSize: 14, color: "#aaa", flexShrink: 0 }} />{d.name}</div>
                 </td>
-                <td style={{ padding: "9px 14px", fontSize: 11, color: "#777", borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>{d.dept}</td>
-                <td style={{ padding: "9px 14px", borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}><StatusBadge status={d.status} /></td>
+                <td style={{ padding: "9px 14px", fontSize: 11, color: "#555", borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>
+                  <div style={{ fontWeight: 600 }}>{d.senderName || "Not recorded"}</div>
+                  <div style={{ fontSize: 10, color: "#888", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis" }}>{d.senderEmail || "—"}</div>
+                </td>
+                <td style={{ padding: "9px 14px", fontSize: 11, color: "#777", borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>{d.senderDepartment || "Non Department"}</td>
                 <td style={{ padding: "9px 14px", fontSize: 11, color: "#777", borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>{d.handler}</td>
+                <td style={{ padding: "9px 14px", fontSize: 11, color: "#777", borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>{d.handlerDepartment || d.dept}</td>
+                <td style={{ padding: "9px 14px", borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}><StatusBadge status={d.status} /></td>
                 <td style={{ padding: "9px 14px", fontSize: 11, color: "#aaa", borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>{d.updated}</td>
+                <td style={{ padding: "7px 10px", borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>
+                  {d.hasSoftCopy ? (
+                    <button type="button" onClick={() => handleViewSoftCopy(d)} disabled={openingFileId === d.id} style={{ border: "1px solid rgba(15,118,110,0.25)", background: "#ecfdf5", color: "#0f766e", borderRadius: 7, padding: "5px 8px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>
+                      <i className="ti ti-eye" style={{ marginRight: 4 }} />{openingFileId === d.id ? "Opening…" : "View"}
+                    </button>
+                  ) : <span style={{ fontSize: 10, color: "#aaa" }}>Not attached</span>}
+                </td>
               </tr>
             )) : (
               <tr>
-                <td colSpan={6} style={{ padding: "18px 14px", fontSize: 12, color: "#666", textAlign: "center" }}>
+                <td colSpan={9} style={{ padding: "18px 14px", fontSize: 12, color: "#666", textAlign: "center" }}>
                   {loading ? "Loading records…" : "No records found for this period."}
                 </td>
               </tr>

@@ -34,8 +34,15 @@ CREATE TABLE IF NOT EXISTS records (
   handler VARCHAR(120) NOT NULL,
   location VARCHAR(255) NOT NULL,
   priority VARCHAR(50) DEFAULT 'Routine',
+  sender_name VARCHAR(255) NULL,
   sender_email VARCHAR(255) NOT NULL,
+  sender_department VARCHAR(120) NULL DEFAULT 'Non Department',
+  handler_department VARCHAR(120) NULL,
   due_date DATE NULL,
+  soft_copy LONGBLOB NULL,
+  soft_copy_name VARCHAR(255) NULL,
+  soft_copy_type VARCHAR(120) NULL,
+  soft_copy_size INT NULL,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

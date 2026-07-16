@@ -1,0 +1,18 @@
+DocTrack Update v1.1
+
+Added features
+1. Admins can attach a PDF, JPG or PNG soft copy when registering a document.
+2. Soft-copy size limit is 3 MB to remain compatible with the current Vercel serverless setup.
+3. Documents page shows a View button for records that contain a soft copy.
+4. Search now supports record ID, document name, department and handler through the backend.
+5. Scanner lookup continues to support record ID, QR code and document name.
+
+Deployment
+1. Keep the existing Vercel environment variables.
+2. Push the backend and Frontend changes to GitHub/main so Vercel redeploys both projects.
+3. The backend automatically adds the new database columns on first use. Alternatively run backend/soft-copy-migration.sql in Aiven Query Editor.
+4. Register a test PDF and verify Documents > View.
+5. Rebuild the Electron installer only if the desktop shell itself changed. Because the app loads the hosted frontend, web feature updates should appear after Vercel deployment.
+
+Security
+- backend/.env has been removed from this package. Keep passwords only in Vercel Environment Variables and local untracked .env files.

@@ -1,0 +1,20 @@
+DocTrack v1.2 - Sender and Handler Details Update
+
+Added:
+- Handler is the selected assigned user.
+- Handler department is filled automatically from the selected user's department.
+- Sender name and sender email are saved and displayed.
+- Sender department and handler department are stored and displayed separately.
+- Sender department is optional and includes a "Non Department" option for external senders.
+- Records search now includes record ID, document name, sender name/email, sender department, handler name and handler department.
+- Existing soft-copy viewing remains available to administrators.
+
+Database:
+- The backend attempts to add the new columns automatically.
+- If automatic migration is unavailable, run backend/document-party-migration.sql in Aiven.
+
+Deployment:
+1. Replace the current project files with this update.
+2. Commit and push to GitHub.
+3. Redeploy backend and frontend on Vercel if auto-deploy does not start.
+4. Test registration with an external sender using Non Department.

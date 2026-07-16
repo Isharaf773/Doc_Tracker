@@ -140,3 +140,21 @@ export function fetchReports(filters = {}) {
   const query = new URLSearchParams(filters).toString();
   return request(`/api/reports${query ? `?${query}` : ""}`);
 }
+
+export async function fetchRecordSoftCopy(recordId) {
+  const response = await fetch(buildUrl(`/api/records/${encodeURIComponent(recordId)}/soft-copy`), {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!response.ok) {
+    let message = "Unable to load the soft copy.";
+    try {
+      const data = await response.json();
+      message = data.error || message;
+    } catch {}
+    throw new Error(message);
+  }
+  return {
+    blob: await response.blob(),
+    contentType: response.headers.get("content-type") || "application/octet-stream",
+  };
+}

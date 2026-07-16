@@ -4,16 +4,28 @@ import { Panel, PanelHeader, GeneratedQR } from "./PageHelpers";
 import { TEAL, TEAL_DARK, TEAL_LIGHT, TEAL_TEXT, BLUE, BLUE_LIGHT, AMBER, AMBER_LIGHT, GRADIENT_TEAL } from "../theme";
 import { createRecord, fetchUsers } from "../api";
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      resolve(result.includes(",") ? result.split(",")[1] : result);
+    };
+    reader.onerror = () => reject(new Error("Unable to read the selected file."));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function PageRegister() {
   const todayValue = new Date().toISOString().slice(0, 10);
   const initialFormState = {
     senderName: "",
     senderEmail: "",
     documentName: "",
-    senderDepartment: "Legal",
+    senderDepartment: "Non Department",
     date: todayValue,
     assignTo: "",
-    assignedDepartment: "Geology",
+    assignedDepartment: "",
     remarks: "",
     softCopy: null,
   };
@@ -59,6 +71,7 @@ export function PageRegister() {
     setForm(current => ({
       ...current,
       assignTo: user.name,
+      assignedDepartment: user.department || user.category || "Non Department",
     }));
     setUserSearch("");
   };
@@ -75,8 +88,8 @@ export function PageRegister() {
   };
 
   const registerRecord = async () => {
-    if (!form.senderName.trim() || !form.senderEmail.trim() || !form.documentName.trim() || !form.senderDepartment.trim() || !form.date || !form.assignTo.trim() || !form.assignedDepartment.trim()) {
-      setError("Please fill in all required fields: sender name, sender email, document name, sender department, date, assign to, and assigned department.");
+    if (!form.senderName.trim() || !form.senderEmail.trim() || !form.documentName.trim() || !form.date || !form.assignTo.trim() || !form.assignedDepartment.trim()) {
+      setError("Please fill in all required fields: sender name, sender email, document name, date, and assign a handler.");
       return;
     }
 
@@ -84,18 +97,31 @@ export function PageRegister() {
     setSubmitting(true);
 
     try {
+      if (form.softCopy && form.softCopy.size > 3 * 1024 * 1024) {
+        throw new Error("Soft copy must be 3 MB or smaller.");
+      }
+      const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
+      if (form.softCopy && !allowedTypes.includes(form.softCopy.type)) {
+        throw new Error("Soft copy must be a PDF, JPG or PNG file.");
+      }
+      const attachmentData = form.softCopy ? await fileToBase64(form.softCopy) : null;
+
       const data = await createRecord({
         name: form.documentName,
         senderName: form.senderName,
         senderEmail: form.senderEmail,
-        dept: form.senderDepartment,
-        assignedDepartment: form.assignedDepartment,
+        dept: form.assignedDepartment,
+        senderDepartment: form.senderDepartment || "Non Department",
+        handlerDepartment: form.assignedDepartment,
         dueDate: form.date,
-        location: form.senderDepartment,
+        location: form.assignedDepartment,
         status: "active",
         handler: form.assignTo,
         message: form.remarks,
         attachmentName: form.softCopy?.name || null,
+        attachmentType: form.softCopy?.type || null,
+        attachmentSize: form.softCopy?.size || null,
+        attachmentData,
       });
 
       const registered = {
@@ -103,7 +129,8 @@ export function PageRegister() {
         documentName: data.record.name,
         senderName: data.record.sender_name || data.record.senderName || form.senderName,
         senderEmail: data.record.sender_email || data.record.senderEmail || form.senderEmail,
-        assignedDepartment: data.record.assigned_department || form.assignedDepartment,
+        senderDepartment: data.record.sender_department || form.senderDepartment || "Non Department",
+        assignedDepartment: data.record.handler_department || data.record.assigned_department || form.assignedDepartment,
         assignTo: data.record.handler || form.assignTo,
         dueDate: data.record.due_date || form.date,
         status: data.record.status || "active",
@@ -147,7 +174,7 @@ export function PageRegister() {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <FormGroup label="Document name"><Input value={form.documentName} onChange={updateForm("documentName")} placeholder="e.g. Contract Review Phase 3" /></FormGroup>
-            <FormGroup label="Sender department"><Select options={["Geology","Mining","HR","Finance","Legal","Audit","IT","Media"]} value={form.senderDepartment} onChange={updateForm("senderDepartment")} /></FormGroup>
+            <FormGroup label="Sender department (optional)"><Select options={["Non Department","Geology","Mining","HR","Finance","Legal","Audit","IT","Media"]} value={form.senderDepartment} onChange={updateForm("senderDepartment")} /></FormGroup>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <FormGroup label="Date"><Input type="date" value={form.date} onChange={updateForm("date")} style={{ width: "100%" }} /></FormGroup>
@@ -203,14 +230,16 @@ export function PageRegister() {
             </FormGroup>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <FormGroup label="Assigned department"><Select options={["Geology","Mining","HR","Finance","Legal","Audit","IT","Media"]} value={form.assignedDepartment} onChange={updateForm("assignedDepartment")} /></FormGroup>
+            <FormGroup label="Handler department"><Input value={form.assignedDepartment} readOnly placeholder="Automatically selected with handler" style={{ background: "#f7f7f7" }} /></FormGroup>
             <FormGroup label="Soft copy (optional)">
               <input
                 type="file"
+                accept="application/pdf,image/jpeg,image/png"
                 onChange={(e) => setForm(current => ({ ...current, softCopy: e.target.files?.[0] || null }))}
                 style={{ width: "100%", padding: "8px 11px", border: "0.5px solid rgba(0,0,0,0.18)", borderRadius: 8, fontFamily: "inherit", background: "white" }}
               />
-              {form.softCopy && <div style={{ marginTop: 6, fontSize: 12, color: "#555" }}>{form.softCopy.name}</div>}
+              {form.softCopy && <div style={{ marginTop: 6, fontSize: 12, color: "#555" }}>{form.softCopy.name} · {(form.softCopy.size / 1024 / 1024).toFixed(2)} MB</div>}
+              <div style={{ marginTop: 5, fontSize: 10, color: "#888" }}>PDF, JPG or PNG · Maximum 3 MB</div>
             </FormGroup>
           </div>
           <div style={{ marginBottom: 12 }}>
@@ -265,7 +294,10 @@ export function PageRegister() {
                 ["Assigned to", lastRegistered.assignTo],
                 ["Assigned dept", lastRegistered.assignedDepartment],
                 ["Due date", lastRegistered.dueDate],
-                ["Sender", lastRegistered.senderEmail],
+                ["Sender", `${lastRegistered.senderName} (${lastRegistered.senderEmail})`],
+                ["Sender department", lastRegistered.senderDepartment || "Non Department"],
+                ["Handler", lastRegistered.assignTo],
+                ["Handler department", lastRegistered.assignedDepartment],
               ].map(([label, value]) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <span style={{ fontSize: 11, color: "#888" }}>{label}</span>
