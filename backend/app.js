@@ -177,6 +177,31 @@ async function addNotification(type, message) {
   }
 }
 
+// Middleware to check admin authorization (headers or query params)
+function requireAdminFlexible(req, res, next) {
+  // Check headers first
+  let adminEmail = req.headers["x-admin-email"];
+  let adminToken = req.headers["x-admin-token"];
+
+  // Fallback to query parameters (for cases like window.open where headers can't be set)
+  if (!adminEmail) {
+    adminEmail = req.query.email;
+    adminToken = req.query.token;
+  }
+
+  if (!adminEmail || !adminToken) {
+    console.log("🔒 Auth failed: Missing email or token");
+    console.log("  Headers email:", !!req.headers["x-admin-email"], "token:", !!req.headers["x-admin-token"]);
+    console.log("  Query email:", !!req.query.email, "token:", !!req.query.token);
+    return sendError(res, "Admin authorization required. Please login first.", 403);
+  }
+
+  // Store in request for use in route handlers
+  req.admin = { email: adminEmail, token: adminToken };
+  console.log("🔒 Auth passed for:", adminEmail);
+  next();
+}
+
 // Middleware to check admin authorization
 function requireAdmin(req, res, next) {
   const adminEmail = req.headers["x-admin-email"];
@@ -600,27 +625,47 @@ app.get("/api/records", async (req, res) => {
   }
 });
 
-app.get("/api/records/:recordCode/soft-copy", requireAdmin, async (req, res) => {
+app.get("/api/records/:recordCode/soft-copy", requireAdminFlexible, async (req, res) => {
   const recordCode = String(req.params.recordCode || "").trim();
   if (!recordCode) return sendError(res, "Record code is required.", 400);
 
   try {
+    console.log("📄 Soft-copy request for record:", recordCode);
+    console.log("   Full URL:", req.originalUrl);
+    console.log("   Query params:", JSON.stringify(req.query));
     await ensureSoftCopySchema();
     const [file] = await query(
       "SELECT soft_copy, soft_copy_name, soft_copy_type, soft_copy_size FROM records WHERE record_code = ? LIMIT 1",
       [recordCode]
     );
-    if (!file) return sendError(res, "Record not found.", 404);
-    if (!file.soft_copy) return sendError(res, "No soft copy is attached to this document.", 404);
+    
+    if (!file) {
+      console.log("❌ Record not found:", recordCode);
+      return sendError(res, "Record not found.", 404);
+    }
+    
+    if (!file.soft_copy) {
+      console.log("❌ No soft copy for record:", recordCode);
+      return sendError(res, "No soft copy is attached to this document.", 404);
+    }
 
     const safeName = String(file.soft_copy_name || `${recordCode}.pdf`).replace(/[\r\n"]/g, "_");
-    res.setHeader("Content-Type", file.soft_copy_type || "application/octet-stream");
-    res.setHeader("Content-Length", String(file.soft_copy_size || file.soft_copy.length));
+    const mimeType = file.soft_copy_type || "application/pdf";
+    const fileSize = file.soft_copy_size || file.soft_copy.length;
+    
+    console.log("✅ Sending soft-copy:", {
+      name: safeName,
+      size: fileSize,
+      type: mimeType
+    });
+    
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Length", String(fileSize));
     res.setHeader("Content-Disposition", `inline; filename="${safeName}"`);
     res.setHeader("Cache-Control", "private, max-age=300");
     return res.send(file.soft_copy);
   } catch (error) {
-    console.error(error);
+    console.error("❌ Soft-copy error:", error.message);
     return sendError(res, "Unable to load the soft copy.");
   }
 });

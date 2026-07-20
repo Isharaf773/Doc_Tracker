@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { FormGroup, Input, Select, BtnGreen, BtnOutline } from "../components/ui";
 import { Panel, PanelHeader } from "./PageHelpers";
 import { TEAL, TEAL_DARK, TEAL_LIGHT, BLUE } from "../theme";
 import { fetchRecords } from "../api";
+import { API_BASE } from "../config";
 
 const DEPARTMENT_OPTIONS = [
   "All departments",
@@ -46,7 +47,7 @@ function getAuthHeaders() {
 
 export function PageDocumentLookup() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchType, setSearchType] = useState("any"); // any, id, name
+  const [searchType, setSearchType] = useState("any");
   const [department, setDepartment] = useState("All departments");
   const [status, setStatus] = useState("all");
   const [results, setResults] = useState([]);
@@ -54,46 +55,60 @@ export function PageDocumentLookup() {
   const [error, setError] = useState("");
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [downloading, setDownloading] = useState(false);
+  const searchTimeoutRef = useRef(null);
 
-  const performSearch = async () => {
+  // Auto-search as user types
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
     if (!searchTerm.trim() && department === "All departments" && status === "all") {
-      setError("Please enter a search term or apply filters.");
+      setResults([]);
+      setError("");
       return;
     }
 
     setLoading(true);
     setError("");
-    setResults([]);
     setSelectedRecord(null);
 
-    try {
-      const filters = {};
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const filters = {};
 
-      if (searchTerm.trim()) {
-        filters.search = searchTerm.trim();
+        if (searchTerm.trim()) {
+          filters.search = searchTerm.trim();
+        }
+
+        if (department !== "All departments") {
+          filters.dept = department;
+        }
+
+        if (status !== "all") {
+          filters.status = status;
+        }
+
+        const data = await fetchRecords(filters);
+        setResults(data.records || []);
+
+        if (searchTerm.trim() && (!data.records || data.records.length === 0)) {
+          setError("No documents found matching your search criteria.");
+        }
+      } catch (err) {
+        console.error(err);
+        setError(err.message || "Unable to search documents.");
+      } finally {
+        setLoading(false);
       }
+    }, 500); // Debounce search by 500ms
 
-      if (department !== "All departments") {
-        filters.dept = department;
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
       }
-
-      if (status !== "all") {
-        filters.status = status;
-      }
-
-      const data = await fetchRecords(filters);
-      setResults(data.records || []);
-
-      if (!data.records || data.records.length === 0) {
-        setError("No documents found matching your search criteria.");
-      }
-    } catch (err) {
-      console.error(err);
-      setError(err.message || "Unable to search documents.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+  }, [searchTerm, department, status]);
 
   const handleView = (record) => {
     if (!record.hasSoftCopy) {
@@ -103,15 +118,27 @@ export function PageDocumentLookup() {
 
     try {
       const headers = getAuthHeaders();
-      const authParams = new URLSearchParams();
-      if (headers["x-admin-email"]) {
-        authParams.append("email", headers["x-admin-email"]);
-        authParams.append("token", headers["x-admin-token"]);
+      const email = headers["x-admin-email"];
+      const token = headers["x-admin-token"];
+      
+      console.log("🔍 View: Auth check -", { email: !!email, token: !!token });
+      
+      if (!email || !token) {
+        setError("Not logged in. Please login first to view documents.");
+        return;
       }
-      const url = `/api/records/${encodeURIComponent(record.id)}/soft-copy${authParams.toString() ? "?" + authParams.toString() : ""}`;
-      window.open(url, "_blank");
+
+      const resolvedApiBase = API_BASE || 'http://127.0.0.1:8080';
+      const normalizedBase = resolvedApiBase.replace(/\/$/, '');
+      
+      // Build URL with auth params
+      const viewUrl = `${normalizedBase}/api/records/${encodeURIComponent(record.id)}/soft-copy?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`;
+      console.log("🔍 View: URL -", viewUrl.substring(0, 100) + "...");
+      
+      // Open directly - query params will be in the URL
+      window.open(viewUrl, "_blank");
     } catch (err) {
-      console.error(err);
+      console.error("🔍 View: Error -", err);
       setError(err.message || "Unable to open document.");
     }
   };
@@ -125,7 +152,13 @@ export function PageDocumentLookup() {
     setDownloading(true);
     try {
       const headers = getAuthHeaders();
-      const response = await fetch(`/api/records/${encodeURIComponent(record.id)}/soft-copy`, {
+      const resolvedApiBase = API_BASE || 'http://127.0.0.1:8080';
+      const normalizedBase = resolvedApiBase.replace(/\/$/, '');
+      const url = `${normalizedBase}/api/records/${encodeURIComponent(record.id)}/soft-copy`;
+      
+      console.log("Downloading from:", url, "with headers:", headers);
+      
+      const response = await fetch(url, {
         headers: {
           ...headers,
         },
@@ -133,18 +166,18 @@ export function PageDocumentLookup() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to download file");
+        throw new Error(errorData.error || `Failed to download file (${response.status})`);
       }
 
       const blob = await response.blob();
       const fileName = record.softCopyName || `${record.id}.pdf`;
-      const url = window.URL.createObjectURL(blob);
+      const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = downloadUrl;
       a.download = fileName;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(downloadUrl);
       document.body.removeChild(a);
     } catch (err) {
       console.error(err);
@@ -181,7 +214,6 @@ export function PageDocumentLookup() {
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && performSearch()}
                 placeholder="ID code or document name"
                 mono={false}
               />
@@ -192,11 +224,12 @@ export function PageDocumentLookup() {
                 value={searchType}
                 onChange={(e) => setSearchType(e.target.value)}
                 style={{ width: "100%" }}
-              >
-                <option value="any">Search all fields</option>
-                <option value="id">ID code only</option>
-                <option value="name">Document name only</option>
-              </Select>
+                options={[
+                  { value: "any", label: "Search all fields" },
+                  { value: "id", label: "ID code only" },
+                  { value: "name", label: "Document name only" },
+                ]}
+              />
             </FormGroup>
 
             <FormGroup label="Department / Category">
@@ -204,13 +237,8 @@ export function PageDocumentLookup() {
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
                 style={{ width: "100%" }}
-              >
-                {DEPARTMENT_OPTIONS.map((dept) => (
-                  <option key={dept} value={dept}>
-                    {dept}
-                  </option>
-                ))}
-              </Select>
+                options={DEPARTMENT_OPTIONS}
+              />
             </FormGroup>
 
             <FormGroup label="Status">
@@ -218,13 +246,8 @@ export function PageDocumentLookup() {
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
                 style={{ width: "100%" }}
-              >
-                {STATUS_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </Select>
+                options={STATUS_OPTIONS}
+              />
             </FormGroup>
           </div>
 
@@ -236,15 +259,22 @@ export function PageDocumentLookup() {
           )}
 
           {/* Action Buttons */}
-          <div style={{ display: "flex", gap: 10 }}>
-            <BtnGreen onClick={performSearch} disabled={loading} style={{ flex: 2, padding: "0 18px", minHeight: 44, borderRadius: 14, fontWeight: 700 }}>
-              {loading ? "Searching…" : "Search"}
-            </BtnGreen>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {loading && (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, color: "#666", fontSize: 12 }}>
+                <div style={{ width: 16, height: 16, border: "2px solid #ddd", borderTop: "2px solid #5A4728", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+                Searching…
+              </div>
+            )}
+            {!loading && results.length > 0 && (
+              <div style={{ flex: 1, color: "#666", fontSize: 12, fontWeight: 600 }}>
+                {results.length} result{results.length !== 1 ? "s" : ""} found
+              </div>
+            )}
             <button
               type="button"
               onClick={clearSearch}
               style={{
-                flex: 1,
                 padding: "0 14px",
                 borderRadius: 14,
                 border: "1px solid rgba(90, 71, 40, 0.18)",
@@ -259,6 +289,12 @@ export function PageDocumentLookup() {
               Clear
             </button>
           </div>
+          
+          <style>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
         </div>
       </Panel>
 
@@ -366,7 +402,7 @@ export function PageDocumentLookup() {
                         )}
                       </td>
                       <td style={{ padding: "12px", textAlign: "center" }}>
-                        <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                        <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "nowrap" }}>
                           <button
                             type="button"
                             onClick={(e) => {
@@ -375,19 +411,20 @@ export function PageDocumentLookup() {
                             }}
                             disabled={!record.hasSoftCopy}
                             style={{
-                              padding: "6px 10px",
-                              borderRadius: 8,
-                              border: record.hasSoftCopy ? "1px solid #556B2F" : "1px solid #ccc",
-                              background: record.hasSoftCopy ? "#556B2F" : "#eee",
-                              color: record.hasSoftCopy ? "white" : "#999",
+                              padding: "4px 8px",
+                              borderRadius: 6,
+                              border: record.hasSoftCopy ? "1px solid #556B2F" : "1px solid #ddd",
+                              background: record.hasSoftCopy ? "#556B2F" : "#f5f5f5",
+                              color: record.hasSoftCopy ? "white" : "#ccc",
                               cursor: record.hasSoftCopy ? "pointer" : "not-allowed",
-                              fontSize: 10,
+                              fontSize: 9,
                               fontWeight: 600,
                               whiteSpace: "nowrap",
+                              opacity: record.hasSoftCopy ? 1 : 0.6,
                             }}
                             title="View document in browser"
                           >
-                            👁 View
+                            👁
                           </button>
                           <button
                             type="button"
@@ -397,19 +434,20 @@ export function PageDocumentLookup() {
                             }}
                             disabled={!record.hasSoftCopy || downloading}
                             style={{
-                              padding: "6px 10px",
-                              borderRadius: 8,
-                              border: record.hasSoftCopy ? "1px solid #5A4728" : "1px solid #ccc",
-                              background: record.hasSoftCopy ? "#5A4728" : "#eee",
-                              color: record.hasSoftCopy ? "white" : "#999",
+                              padding: "4px 8px",
+                              borderRadius: 6,
+                              border: record.hasSoftCopy ? "1px solid #5A4728" : "1px solid #ddd",
+                              background: record.hasSoftCopy ? "#5A4728" : "#f5f5f5",
+                              color: record.hasSoftCopy ? "white" : "#ccc",
                               cursor: record.hasSoftCopy ? "pointer" : "not-allowed",
-                              fontSize: 10,
+                              fontSize: 9,
                               fontWeight: 600,
                               whiteSpace: "nowrap",
+                              opacity: record.hasSoftCopy ? 1 : 0.6,
                             }}
                             title="Download document"
                           >
-                            {downloading ? "…" : "📥 DL"}
+                            {downloading ? "↓" : "📥"}
                           </button>
                         </div>
                       </td>
@@ -457,24 +495,24 @@ export function PageDocumentLookup() {
             {selectedRecord.hasSoftCopy && (
               <div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: "#666", marginBottom: 8 }}>Soft Copy</div>
-                <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ display: "flex", gap: 8 }}>
                   <button
                     type="button"
                     onClick={() => handleView(selectedRecord)}
                     style={{
                       flex: 1,
-                      padding: "10px 16px",
-                      borderRadius: 8,
+                      padding: "8px 12px",
+                      borderRadius: 6,
                       border: "none",
                       background: "#556B2F",
                       color: "white",
                       cursor: "pointer",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      minHeight: 36,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      minHeight: 32,
                     }}
                   >
-                    👁 Open in Browser
+                    👁 View
                   </button>
                   <button
                     type="button"
@@ -482,15 +520,15 @@ export function PageDocumentLookup() {
                     disabled={downloading}
                     style={{
                       flex: 1,
-                      padding: "10px 16px",
-                      borderRadius: 8,
+                      padding: "8px 12px",
+                      borderRadius: 6,
                       border: "none",
                       background: "#5A4728",
                       color: "white",
                       cursor: downloading ? "wait" : "pointer",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      minHeight: 36,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      minHeight: 32,
                     }}
                   >
                     {downloading ? "Downloading…" : "📥 Download"}
