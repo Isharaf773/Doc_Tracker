@@ -22,6 +22,7 @@ export const pages = [
   { id: "dashboard", label: "Dashboard", icon: "ti-layout-dashboard", section: "main" },
   { id: "documents", label: "Records", icon: "ti-files", section: "main" },
   { id: "scanner", label: "QR Scanner", icon: "ti-qrcode", section: "main" },
+  { id: "documentLookup", label: "Document Lookup", icon: "ti-file-search", section: "main" },
   { id: "journey", label: "Journey log", icon: "ti-route", section: "main" },
   { id: "register", label: "Register record", icon: "ti-file-plus", section: "mgmt" },
   { id: "users", label: "Users", icon: "ti-users", section: "mgmt" },

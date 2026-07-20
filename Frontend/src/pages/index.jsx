@@ -1,6 +1,7 @@
 ﻿export { PageDashboard } from "./Dashboard";
 export { PageDocuments } from "./Documents";
 export { PageScanner } from "./Scanner";
+export { PageDocumentLookup } from "./DocumentLookup";
 export { PageJourney } from "./Journey";
 export { PageRegister } from "./Register";
 export { PageUsers } from "./Users";

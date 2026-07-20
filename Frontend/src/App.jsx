@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { LoginPage } from "./components/LoginPage";
 import { Sidebar } from "./components/Sidebar";
-import { PageDashboard, PageDocuments, PageScanner, PageJourney, PageRegister, PageUsers, PageReports, PageReportDetail, PageNotifications, PageSettings, ResetPasswordPage } from "./pages";
+import { PageDashboard, PageDocuments, PageScanner, PageDocumentLookup, PageJourney, PageRegister, PageUsers, PageReports, PageReportDetail, PageNotifications, PageSettings, ResetPasswordPage } from "./pages";
 import { BtnGreen, BtnOutline } from "./components/ui";
 import { fetchNotifications } from "./api";
 import { RED, GRADIENT_RUST } from "./theme";
@@ -13,6 +13,7 @@ const routes = {
   dashboard: "/dashboard",
   documents: "/records",
   scanner: "/scanner",
+  documentLookup: "/lookup",
   journey: "/journey",
   register: "/register",
   users: "/users",
@@ -27,6 +28,7 @@ const pageConfig = {
   dashboard: { title: "Dashboard", bc: "GeoMine - Overview" },
   documents: { title: "Records", bc: "GeoMine - Records" },
   scanner: { title: "QR Scanner", bc: "GeoMine - Scanner" },
+  documentLookup: { title: "Document Lookup", bc: "GeoMine - Lookup & Download" },
   journey: { title: "Journey log", bc: "GeoMine - Journey" },
   register: { title: "Register record", bc: "GeoMine - New record" },
   users: { title: "Users", bc: "GeoMine - Users" },
@@ -222,6 +224,7 @@ export default function DocTrack() {
       case "dashboard": return <PageDashboard nav={navigate} user={authUser} pageSearch={globalSearch} />;
       case "documents": return <PageDocuments nav={navigate} pageSearch={globalSearch} routeParams={routeInfo.params} />;
       case "scanner": return <PageScanner />;
+      case "documentLookup": return <PageDocumentLookup />;
       case "journey": return <PageJourney />;
       case "register": return <PageRegister />;
       case "users": return <PageUsers nav={navigate} routeParams={routeInfo.params} />;
