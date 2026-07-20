@@ -95,6 +95,27 @@ export function PageDocumentLookup() {
     }
   };
 
+  const handleView = (record) => {
+    if (!record.hasSoftCopy) {
+      setError("This document does not have a soft copy attached.");
+      return;
+    }
+
+    try {
+      const headers = getAuthHeaders();
+      const authParams = new URLSearchParams();
+      if (headers["x-admin-email"]) {
+        authParams.append("email", headers["x-admin-email"]);
+        authParams.append("token", headers["x-admin-token"]);
+      }
+      const url = `/api/records/${encodeURIComponent(record.id)}/soft-copy${authParams.toString() ? "?" + authParams.toString() : ""}`;
+      window.open(url, "_blank");
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Unable to open document.");
+    }
+  };
+
   const handleDownload = async (record) => {
     if (!record.hasSoftCopy) {
       setError("This document does not have a soft copy attached.");
@@ -245,8 +266,8 @@ export function PageDocumentLookup() {
       {results.length > 0 && (
         <Panel>
           <PanelHeader icon="ti-table" title="Search Results" badge={`${results.length} found`} />
-          <div style={{ margin: 14, borderRadius: 12, overflow: "hidden", border: "1px solid rgba(0,0,0,0.08)" }}>
-            <div style={{ overflowX: "auto" }}>
+          <div style={{ margin: 14, borderRadius: 12, overflow: "hidden", border: "1px solid rgba(0,0,0,0.08)", maxHeight: "600px", display: "flex", flexDirection: "column" }}>
+            <div style={{ overflowX: "auto", overflowY: "auto", flex: 1 }}>
               <table
                 style={{
                   width: "100%",
@@ -255,14 +276,14 @@ export function PageDocumentLookup() {
                   textAlign: "left",
                 }}
               >
-                <thead>
+                <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
                   <tr style={{ background: "rgba(90, 71, 40, 0.08)", borderBottom: "1px solid rgba(0,0,0,0.12)" }}>
-                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728" }}>ID Code</th>
-                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728" }}>Document Name</th>
-                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728" }}>Department</th>
-                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728" }}>Status</th>
-                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728" }}>Soft Copy</th>
-                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728" }}>Action</th>
+                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728", minWidth: "120px" }}>ID Code</th>
+                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728", minWidth: "200px" }}>Document Name</th>
+                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728", minWidth: "140px" }}>Department</th>
+                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728", minWidth: "100px" }}>Status</th>
+                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728", minWidth: "90px", textAlign: "center" }}>Soft Copy</th>
+                    <th style={{ padding: "12px", fontWeight: 600, color: "#5A4728", minWidth: "130px", textAlign: "center" }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -271,14 +292,29 @@ export function PageDocumentLookup() {
                       key={record.id}
                       style={{
                         borderBottom: "1px solid rgba(0,0,0,0.06)",
-                        background: selectedRecord?.id === record.id ? "rgba(0, 128, 128, 0.04)" : idx % 2 === 0 ? "white" : "rgba(0,0,0,0.02)",
+                        background: selectedRecord?.id === record.id ? "rgba(90, 71, 40, 0.1)" : idx % 2 === 0 ? "white" : "rgba(0,0,0,0.02)",
                         cursor: "pointer",
+                        transition: "background 0.15s",
                       }}
                       onClick={() => handleSelectRecord(record)}
+                      onMouseEnter={(e) => {
+                        if (selectedRecord?.id !== record.id) {
+                          e.currentTarget.style.background = "rgba(90, 71, 40, 0.04)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (selectedRecord?.id !== record.id) {
+                          e.currentTarget.style.background = idx % 2 === 0 ? "white" : "rgba(0,0,0,0.02)";
+                        }
+                      }}
                     >
-                      <td style={{ padding: "12px", color: "#333", fontWeight: 600 }}>{record.id}</td>
-                      <td style={{ padding: "12px", color: "#555" }}>{record.name}</td>
-                      <td style={{ padding: "12px", color: "#666" }}>{record.dept}</td>
+                      <td style={{ padding: "12px", color: "#333", fontWeight: 600, whiteSpace: "nowrap" }}>{record.id}</td>
+                      <td style={{ padding: "12px", color: "#555" }}>
+                        <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={record.name}>
+                          {record.name}
+                        </div>
+                      </td>
+                      <td style={{ padding: "12px", color: "#666", whiteSpace: "nowrap" }}>{record.dept}</td>
                       <td style={{ padding: "12px" }}>
                         <span
                           style={{
@@ -287,6 +323,7 @@ export function PageDocumentLookup() {
                             borderRadius: 6,
                             fontSize: 11,
                             fontWeight: 600,
+                            whiteSpace: "nowrap",
                             background:
                               record.status === "completed"
                                 ? "#d1fae5"
@@ -319,6 +356,7 @@ export function PageDocumentLookup() {
                               fontWeight: 600,
                               background: "#d1fae5",
                               color: "#065f46",
+                              whiteSpace: "nowrap",
                             }}
                           >
                             ✓ Yes
@@ -328,26 +366,52 @@ export function PageDocumentLookup() {
                         )}
                       </td>
                       <td style={{ padding: "12px", textAlign: "center" }}>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownload(record);
-                          }}
-                          disabled={!record.hasSoftCopy || downloading}
-                          style={{
-                            padding: "6px 10px",
-                            borderRadius: 8,
-                            border: record.hasSoftCopy ? "1px solid #5A4728" : "1px solid #ccc",
-                            background: record.hasSoftCopy ? "#5A4728" : "#eee",
-                            color: record.hasSoftCopy ? "white" : "#999",
-                            cursor: record.hasSoftCopy ? "pointer" : "not-allowed",
-                            fontSize: 11,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {downloading ? "…" : "Download"}
-                        </button>
+                        <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleView(record);
+                            }}
+                            disabled={!record.hasSoftCopy}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: 8,
+                              border: record.hasSoftCopy ? "1px solid #556B2F" : "1px solid #ccc",
+                              background: record.hasSoftCopy ? "#556B2F" : "#eee",
+                              color: record.hasSoftCopy ? "white" : "#999",
+                              cursor: record.hasSoftCopy ? "pointer" : "not-allowed",
+                              fontSize: 10,
+                              fontWeight: 600,
+                              whiteSpace: "nowrap",
+                            }}
+                            title="View document in browser"
+                          >
+                            👁 View
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownload(record);
+                            }}
+                            disabled={!record.hasSoftCopy || downloading}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: 8,
+                              border: record.hasSoftCopy ? "1px solid #5A4728" : "1px solid #ccc",
+                              background: record.hasSoftCopy ? "#5A4728" : "#eee",
+                              color: record.hasSoftCopy ? "white" : "#999",
+                              cursor: record.hasSoftCopy ? "pointer" : "not-allowed",
+                              fontSize: 10,
+                              fontWeight: 600,
+                              whiteSpace: "nowrap",
+                            }}
+                            title="Download document"
+                          >
+                            {downloading ? "…" : "📥 DL"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -393,24 +457,45 @@ export function PageDocumentLookup() {
             {selectedRecord.hasSoftCopy && (
               <div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: "#666", marginBottom: 8 }}>Soft Copy</div>
-                <button
-                  type="button"
-                  onClick={() => handleDownload(selectedRecord)}
-                  disabled={downloading}
-                  style={{
-                    padding: "10px 16px",
-                    borderRadius: 8,
-                    border: "none",
-                    background: "#5A4728",
-                    color: "white",
-                    cursor: downloading ? "wait" : "pointer",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    minHeight: 36,
-                  }}
-                >
-                  {downloading ? "Downloading…" : "📥 Download " + (selectedRecord.softCopyName || "File")}
-                </button>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => handleView(selectedRecord)}
+                    style={{
+                      flex: 1,
+                      padding: "10px 16px",
+                      borderRadius: 8,
+                      border: "none",
+                      background: "#556B2F",
+                      color: "white",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      minHeight: 36,
+                    }}
+                  >
+                    👁 Open in Browser
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(selectedRecord)}
+                    disabled={downloading}
+                    style={{
+                      flex: 1,
+                      padding: "10px 16px",
+                      borderRadius: 8,
+                      border: "none",
+                      background: "#5A4728",
+                      color: "white",
+                      cursor: downloading ? "wait" : "pointer",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      minHeight: 36,
+                    }}
+                  >
+                    {downloading ? "Downloading…" : "📥 Download"}
+                  </button>
+                </div>
               </div>
             )}
           </div>
