@@ -84,27 +84,90 @@ function sendError(res, message, status = 500) {
 
 
 let softCopySchemaPromise;
+
+async function columnExists(tableName, columnName) {
+  const rows = await query(
+    `
+      SELECT COUNT(*) AS count
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?
+    `,
+    [tableName, columnName]
+  );
+
+  return Number(rows?.[0]?.count || 0) > 0;
+}
+
+async function addColumnIfMissing(tableName, columnName, columnDefinition) {
+  const exists = await columnExists(tableName, columnName);
+
+  if (!exists) {
+    await query(
+      `ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${columnDefinition}`
+    );
+  }
+}
+
 async function ensureSoftCopySchema() {
   if (!softCopySchemaPromise) {
     softCopySchemaPromise = (async () => {
-      const statements = [
-        "ALTER TABLE records ADD COLUMN IF NOT EXISTS soft_copy LONGBLOB NULL",
-        "ALTER TABLE records ADD COLUMN IF NOT EXISTS soft_copy_name VARCHAR(255) NULL",
-        "ALTER TABLE records ADD COLUMN IF NOT EXISTS soft_copy_type VARCHAR(120) NULL",
-        "ALTER TABLE records ADD COLUMN IF NOT EXISTS soft_copy_size INT NULL",
-        "ALTER TABLE records ADD COLUMN IF NOT EXISTS sender_name VARCHAR(255) NULL",
-        "ALTER TABLE records ADD COLUMN IF NOT EXISTS sender_department VARCHAR(120) NULL",
-        "ALTER TABLE records ADD COLUMN IF NOT EXISTS handler_department VARCHAR(120) NULL",
-      ];
-      for (const sql of statements) await query(sql);
+      await addColumnIfMissing(
+        "records",
+        "soft_copy",
+        "LONGBLOB NULL"
+      );
+
+      await addColumnIfMissing(
+        "records",
+        "soft_copy_name",
+        "VARCHAR(255) NULL"
+      );
+
+      await addColumnIfMissing(
+        "records",
+        "soft_copy_type",
+        "VARCHAR(120) NULL"
+      );
+
+      await addColumnIfMissing(
+        "records",
+        "soft_copy_size",
+        "INT NULL"
+      );
+
+      await addColumnIfMissing(
+        "records",
+        "sender_name",
+        "VARCHAR(255) NULL"
+      );
+
+      await addColumnIfMissing(
+        "records",
+        "sender_email",
+        "VARCHAR(255) NULL"
+      );
+
+      await addColumnIfMissing(
+        "records",
+        "sender_department",
+        "VARCHAR(120) NULL DEFAULT 'Non Department'"
+      );
+
+      await addColumnIfMissing(
+        "records",
+        "handler_department",
+        "VARCHAR(120) NULL"
+      );
     })().catch((error) => {
       softCopySchemaPromise = null;
       throw error;
     });
   }
+
   return softCopySchemaPromise;
 }
-
 async function addNotification(type, message) {
   const time = "Just now";
   try {
