@@ -95,7 +95,43 @@ export function updateUser(email, payload) {
 export function deleteUser(email) {
   return request(`/api/users/${encodeURIComponent(email)}`, { method: "DELETE" });
 }
-export function updateRecordLocation(recordId, payload) {
+export function updateRecordLocation(recordId, payload, attachments = []) {
+  // If attachments are provided, use FormData for multipart upload
+  if (attachments && attachments.length > 0) {
+    const formData = new FormData();
+    formData.append("location", payload.location);
+    formData.append("status", payload.status);
+    formData.append("handler", payload.handler);
+    if (payload.comment) formData.append("comment", payload.comment);
+    
+    // Add all attachment files
+    attachments.forEach(file => {
+      formData.append("attachments", file);
+    });
+
+    // Custom fetch for multipart since regular request() expects JSON
+    const url = buildUrl(`/api/records/${encodeURIComponent(recordId)}/location`);
+    const init = {
+      method: "POST",
+      headers: {
+        ...getAuthHeaders(),
+      },
+      body: formData,
+    };
+
+    return fetch(url, init)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error("Upload failed");
+        }
+        return response.json();
+      })
+      .catch(error => {
+        throw new Error(error.message || "Upload failed");
+      });
+  }
+
+  // If no attachments, use regular JSON request
   return request(`/api/records/${encodeURIComponent(recordId)}/location`, { method: "POST", body: payload });
 }
 
@@ -134,6 +170,32 @@ export function resetPassword(email, password) {
 export function fetchJourney(recordId) {
   const query = new URLSearchParams({ recordId }).toString();
   return request(`/api/journey?${query}`);
+}
+
+export function fetchJourneyAttachments(journeyId) {
+  return request(`/api/journey/${encodeURIComponent(journeyId)}/attachments`);
+}
+
+export async function downloadJourneyAttachment(journeyId, attachmentId, fileName) {
+  try {
+    const response = await fetch(
+      buildUrl(`/api/journey/${encodeURIComponent(journeyId)}/attachments/${encodeURIComponent(attachmentId)}/download`),
+      { headers: { ...getAuthHeaders() } }
+    );
+    if (!response.ok) throw new Error("Download failed");
+    
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName || "attachment";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    throw new Error(error.message || "Unable to download attachment");
+  }
 }
 
 export function fetchReports(filters = {}) {

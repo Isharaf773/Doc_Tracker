@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
 import qrcode from "qrcode";
+import multer from "multer";
 import { query } from "./db.js";
 
 dotenv.config();
@@ -60,6 +61,31 @@ app.use(
 
 app.options("*", cors());
 app.use(express.json({ limit: "6mb" }));
+
+// Configure multer for file uploads (50MB limit)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = [
+      "application/pdf",
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type ${file.mimetype} not allowed`));
+    }
+  }
+});
 
 const emailUser = process.env.GMAIL_USER || process.env.EMAIL_USER;
 const emailPass = process.env.GMAIL_PASS || process.env.EMAIL_PASS;
@@ -884,7 +910,7 @@ app.post("/api/records", async (req, res) => {
   }
 });
 
-app.post("/api/records/:recordCode/location", async (req, res) => {
+app.post("/api/records/:recordCode/location", upload.array("attachments", 5), async (req, res) => {
   const { location, status, handler, comment } = req.body;
   if (!location) {
     return sendError(res, "Location is required.", 400);
@@ -933,10 +959,26 @@ app.post("/api/records/:recordCode/location", async (req, res) => {
       [location, newStatus, newHandler, req.params.recordCode]
     );
 
-    await query(
-      "INSERT INTO journey_logs (record_code, step_order, action, meta, done) VALUES (?, ?, ?, ?, ?)",
-      [req.params.recordCode, stepOrder, action, meta, done]
+    // Check if attachments exist
+    const hasAttachments = req.files && req.files.length > 0;
+    
+    const [journeyResult] = await query(
+      "INSERT INTO journey_logs (record_code, step_order, action, meta, done, has_attachments, description) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [req.params.recordCode, stepOrder, action, meta, done, hasAttachments, comment || null]
     );
+
+    const journeyId = journeyResult.insertId;
+
+    // Store attachments if provided
+    if (hasAttachments) {
+      const adminEmail = req.headers["x-admin-email"] || "system";
+      for (const file of req.files) {
+        await query(
+          "INSERT INTO journey_attachments (journey_id, record_code, file_name, file_type, file_size, file_data, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [journeyId, req.params.recordCode, file.originalname, file.mimetype, file.size, file.buffer, adminEmail]
+        );
+      }
+    }
 
     let notificationType = 'transfer';
     let notificationMessage = `${req.params.recordCode} moved to ${location}`;
@@ -963,7 +1005,7 @@ app.post("/api/records/:recordCode/location", async (req, res) => {
     await addNotification(notificationType, notificationMessage);
 
     const [updated] = await query("SELECT record_code AS id, name, dept, status, handler, location, priority, sender_name, sender_email, COALESCE(sender_department, 'Non Department') AS sender_department, COALESCE(handler_department, dept) AS handler_department, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code = ? LIMIT 1", [req.params.recordCode]);
-    return res.json({ record: updated });
+    return res.json({ record: updated, attachmentsStored: hasAttachments ? req.files.length : 0 });
   } catch (error) {
     console.error(error);
     return sendError(res, "Unable to update location.");
@@ -1122,6 +1164,54 @@ app.get("/api/journey", async (req, res) => {
   } catch (error) {
     console.error(error);
     return sendError(res, "Unable to load journey.");
+  }
+});
+
+// Get attachments for a specific journey step
+app.get("/api/journey/:journeyId/attachments", async (req, res) => {
+  const journeyId = parseInt(req.params.journeyId, 10);
+  if (!journeyId || isNaN(journeyId)) {
+    return sendError(res, "Valid journey ID required.", 400);
+  }
+
+  try {
+    const attachments = await query(
+      "SELECT id, file_name, file_type, file_size, uploaded_by, DATE_FORMAT(created_at, '%Y-%m-%d %T') AS uploaded_at FROM journey_attachments WHERE journey_id = ? ORDER BY created_at ASC",
+      [journeyId]
+    );
+    return res.json({ attachments });
+  } catch (error) {
+    console.error(error);
+    return sendError(res, "Unable to load attachments.");
+  }
+});
+
+// Download a specific attachment
+app.get("/api/journey/:journeyId/attachments/:attachmentId/download", async (req, res) => {
+  const journeyId = parseInt(req.params.journeyId, 10);
+  const attachmentId = parseInt(req.params.attachmentId, 10);
+
+  if (!journeyId || !attachmentId || isNaN(journeyId) || isNaN(attachmentId)) {
+    return sendError(res, "Valid journey and attachment IDs required.", 400);
+  }
+
+  try {
+    const [attachment] = await query(
+      "SELECT file_name, file_type, file_data FROM journey_attachments WHERE id = ? AND journey_id = ? LIMIT 1",
+      [attachmentId, journeyId]
+    );
+
+    if (!attachment) {
+      return sendError(res, "Attachment not found.", 404);
+    }
+
+    res.setHeader("Content-Type", attachment.file_type);
+    res.setHeader("Content-Disposition", `attachment; filename="${attachment.file_name}"`);
+    res.setHeader("Content-Length", attachment.file_data.length);
+    return res.send(attachment.file_data);
+  } catch (error) {
+    console.error(error);
+    return sendError(res, "Unable to download attachment.");
   }
 });
 

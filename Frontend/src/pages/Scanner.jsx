@@ -24,10 +24,12 @@ export function PageScanner() {
   const [scannerError, setScannerError] = useState("");
   const [lastScannedCode, setLastScannedCode] = useState("");
   const [uploadedFileName, setUploadedFileName] = useState("");
+  const [selectedAttachments, setSelectedAttachments] = useState([]);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
+  const attachmentInputRef = useRef(null);
   const scanFrameRef = useRef(null);
   const mediaStreamRef = useRef(null);
 
@@ -251,6 +253,7 @@ export function PageScanner() {
     setTransactions([]);
     setShowAllTransactions(false);
     setShowUpdateOnly(false);
+    setSelectedAttachments([]);
   };
 
   const saveLocation = async () => {
@@ -271,9 +274,10 @@ export function PageScanner() {
         status: newStatus || record.status,
         handler: record.handler,
         comment: comment.trim() || null,
-      });
+      }, selectedAttachments);
       setRecord(data.record);
       setComment("");
+      setSelectedAttachments([]);
       window.dispatchEvent(new Event("doctrack:notifications-updated"));
       window.dispatchEvent(new Event("doctrack:dashboard-refresh"));
       await loadJourney(record.id);
@@ -456,6 +460,85 @@ export function PageScanner() {
                     placeholder="Add a note for this transaction"
                     style={{ width: "100%", minHeight: 90, padding: "8px 11px", border: "0.5px solid rgba(0,0,0,0.18)", borderRadius: 8, fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", background: "white", color: "#1a1a1a" }}
                   />
+                </FormGroup>
+                <FormGroup label="Attach documents (optional)">
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <input
+                      ref={attachmentInputRef}
+                      type="file"
+                      multiple
+                      accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        setSelectedAttachments(prev => [...prev, ...files]);
+                      }}
+                      style={{ display: "none" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => attachmentInputRef.current?.click()}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: 8,
+                        border: "1.5px dashed rgba(90,71,40,0.3)",
+                        background: "rgba(90,71,40,0.05)",
+                        color: "#5A4728",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        textAlign: "center",
+                        transition: "all 0.2s"
+                      }}
+                      onMouseOver={(e) => {
+                        e.target.style.background = "rgba(90,71,40,0.1)";
+                        e.target.style.borderColor = "rgba(90,71,40,0.5)";
+                      }}
+                      onMouseOut={(e) => {
+                        e.target.style.background = "rgba(90,71,40,0.05)";
+                        e.target.style.borderColor = "rgba(90,71,40,0.3)";
+                      }}
+                    >
+                      📎 Add PDF or photo documents
+                    </button>
+                    {selectedAttachments.length > 0 && (
+                      <div style={{ fontSize: 12, color: "#666" }}>
+                        <div style={{ marginBottom: 6, fontWeight: 600 }}>{selectedAttachments.length} file{selectedAttachments.length !== 1 ? "s" : ""} selected:</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                          {selectedAttachments.map((file, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                padding: "6px 10px",
+                                background: "#E8F5E9",
+                                borderRadius: 6,
+                                fontSize: 11
+                              }}
+                            >
+                              <span>{file.name} ({(file.size / 1024 / 1024).toFixed(2)}MB)</span>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAttachments(prev => prev.filter((_, i) => i !== idx))}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  color: "#D23F37",
+                                  fontSize: 14,
+                                  padding: 0,
+                                  lineHeight: 1
+                                }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </FormGroup>
                 <div style={{ display: "flex", gap: 10 }}>
                   <BtnGreen onClick={saveLocation} disabled={!record || updating} style={{ flex: 2, minHeight: 44, borderRadius: 14, padding: "0 18px", fontWeight: 700 }}>{updating ? "Saving…" : "Save update"}</BtnGreen>
