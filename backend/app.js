@@ -962,15 +962,19 @@ app.post("/api/records/:recordCode/location", upload.array("attachments", 5), as
     // Check if attachments exist
     const hasAttachments = req.files && req.files.length > 0;
     
-    const [journeyResult] = await query(
+    const journeyResult = await query(
       "INSERT INTO journey_logs (record_code, step_order, action, meta, done, has_attachments, description) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [req.params.recordCode, stepOrder, action, meta, done, hasAttachments, comment || null]
     );
 
-    const journeyId = journeyResult.insertId;
+    const journeyId = journeyResult?.insertId || journeyResult?.insert_id || (journeyResult && journeyResult[0] && journeyResult[0].insertId);
 
     // Store attachments if provided
     if (hasAttachments) {
+      if (!journeyId) {
+        console.error("Journey insert did not return insertId", journeyResult);
+        return sendError(res, "Unable to store attachment metadata.", 500);
+      }
       const adminEmail = req.headers["x-admin-email"] || "system";
       for (const file of req.files) {
         await query(
@@ -1007,8 +1011,8 @@ app.post("/api/records/:recordCode/location", upload.array("attachments", 5), as
     const [updated] = await query("SELECT record_code AS id, name, dept, status, handler, location, priority, sender_name, sender_email, COALESCE(sender_department, 'Non Department') AS sender_department, COALESCE(handler_department, dept) AS handler_department, DATE_FORMAT(updated_at, '%Y-%m-%d %T') AS updated_at, DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date FROM records WHERE record_code = ? LIMIT 1", [req.params.recordCode]);
     return res.json({ record: updated, attachmentsStored: hasAttachments ? req.files.length : 0 });
   } catch (error) {
-    console.error(error);
-    return sendError(res, "Unable to update location.");
+    console.error("Record location update failed:", error);
+    return sendError(res, error?.message || "Unable to update location.");
   }
 });
 
@@ -1213,6 +1217,25 @@ app.get("/api/journey/:journeyId/attachments/:attachmentId/download", async (req
     console.error(error);
     return sendError(res, "Unable to download attachment.");
   }
+});
+
+// Handle upload errors and all other JSON-friendly errors
+app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  if (err && err.name === 'MulterError') {
+    console.error('Multer upload error:', err.message);
+    return sendError(res, err.message, 400);
+  }
+
+  if (err) {
+    console.error('Unhandled error:', err.message || err);
+    return sendError(res, err.message || 'Unexpected server error', 500);
+  }
+
+  next();
 });
 
 // Temporary debug endpoint to inspect how a term matches records (exact, suffix, LIKE, stripped)
@@ -1499,6 +1522,45 @@ async function ensureUserCategoryColumn() {
   }
 }
 
+async function ensureJourneyAttachmentsSchema() {
+  try {
+    const tableCheck = await query("SHOW TABLES LIKE 'journey_attachments'");
+    if (!tableCheck || tableCheck.length === 0) {
+      await query(`
+        CREATE TABLE IF NOT EXISTS journey_attachments (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          journey_id INT NOT NULL,
+          record_code VARCHAR(64) NOT NULL,
+          file_name VARCHAR(255) NOT NULL,
+          file_type VARCHAR(120) NOT NULL,
+          file_size INT NOT NULL,
+          file_data LONGBLOB NOT NULL,
+          uploaded_by VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_journey_id (journey_id),
+          INDEX idx_record_code (record_code),
+          FOREIGN KEY (journey_id) REFERENCES journey_logs(id) ON DELETE CASCADE
+        )
+      `);
+      console.log("DocTrack backend: created journey_attachments table.");
+    }
+
+    const hasAttachmentColumn = await query("SHOW COLUMNS FROM journey_logs LIKE 'has_attachments'");
+    if (!hasAttachmentColumn || hasAttachmentColumn.length === 0) {
+      await query("ALTER TABLE journey_logs ADD COLUMN has_attachments BOOLEAN DEFAULT false AFTER done");
+      console.log("DocTrack backend: added missing journey_logs.has_attachments column.");
+    }
+
+    const descriptionColumn = await query("SHOW COLUMNS FROM journey_logs LIKE 'description'");
+    if (!descriptionColumn || descriptionColumn.length === 0) {
+      await query("ALTER TABLE journey_logs ADD COLUMN description TEXT NULL AFTER has_attachments");
+      console.log("DocTrack backend: added missing journey_logs.description column.");
+    }
+  } catch (error) {
+    console.error("DocTrack backend: failed to ensure journey attachments schema", error);
+  }
+}
+
 let initializationPromise;
 
 export function initializeApp() {
@@ -1506,6 +1568,7 @@ export function initializeApp() {
     initializationPromise = Promise.all([
       ensureAdminDepartmentColumn(),
       ensureUserCategoryColumn(),
+      ensureJourneyAttachmentsSchema(),
     ]);
   }
 

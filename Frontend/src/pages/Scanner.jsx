@@ -424,7 +424,8 @@ export function PageScanner() {
                         ["Assigned to", record.handler],
                         ["Department", record.dept],
                         ["Current location", record.location],
-                        ["Due date", record.due_date || "�"],
+                        ["Due date", record.due_date || "—"],
+                        ["Last updated", record.updated_at || "—"],
                         ["Sender email", record.sender_email],
                       ].map(([label, value]) => (
                         <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -565,6 +566,7 @@ export function PageScanner() {
                       <div key={`${step.action}-${index}`} style={{ padding: 12, borderRadius: 14, background: "#f8fafc" }}>
                         <div style={{ fontSize: 12, fontWeight: 600, color: "#1a1a1a", marginBottom: 6 }}>{step.action}</div>
                         <div style={{ fontSize: 11, color: "#555", marginBottom: 8 }}>{step.meta}</div>
+                        <div style={{ fontSize: 10, color: "#888", marginBottom: 8 }}>{step.timestamp ? `Updated: ${step.timestamp}` : (step.done ? "Completed" : "Pending")}</div>
                         <div style={{ fontSize: 10, color: "#888" }}>{step.done ? "Completed" : "Pending"}</div>
                       </div>
                     )) : (

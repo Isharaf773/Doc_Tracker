@@ -119,16 +119,24 @@ export function updateRecordLocation(recordId, payload, attachments = []) {
       body: formData,
     };
 
-    return fetch(url, init)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error("Upload failed");
-        }
-        return response.json();
-      })
-      .catch(error => {
-        throw new Error(error.message || "Upload failed");
-      });
+    return fetch(url, init).then(async response => {
+      const text = await response.text().catch(() => "");
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (e) {
+        data = { raw: text };
+      }
+
+      if (!response.ok) {
+        const errorMessage = data.error || data.message || (typeof data.raw === 'string' ? data.raw : 'Upload failed');
+        throw new Error(errorMessage);
+      }
+
+      return data;
+    }).catch(error => {
+      throw new Error(error.message || "Upload failed");
+    });
   }
 
   // If no attachments, use regular JSON request
